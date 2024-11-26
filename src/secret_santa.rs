@@ -28,11 +28,14 @@ pub(crate) fn generate_secret_santa2<'a>(
     let mut rng = rand::thread_rng();
     let mut exclusion_graph: HashMap<&'a str, HashSet<&'a str>> = exclusions.iter().map(|(&key, value)| (key, value.clone())).collect();
     let mut stack = Vec::with_capacity(participants.len());
-    let mut visited = HashSet::with_capacity(participants.len());
+
+    let mut unassigned = participants.clone();
 
     // Choose a random starting participant
-    let start_participant = participants.iter().cloned().choose(&mut rng)?;
+    let start_participant = *participants.iter().max_by_key(|&&participant| exclusion_graph.get(participant).map_or(0, |exclusions| exclusions.len()))?;
     stack.push(start_participant);
+
+    unassigned.remove(start_participant);
 
     // Backtracking loop to build a valid cycle
     while stack.len() < participants.len() {
@@ -45,19 +48,19 @@ pub(crate) fn generate_secret_santa2<'a>(
             .or_insert_with(HashSet::new);
 
         // Collect all non-excluded, non-visited participants
-        let available: Vec<_> = participants
+        let available: Vec<_> = unassigned
             .iter()
-            .filter(|&&p| p != giver && !excluded.contains(p) && !visited.contains(p))
+            .filter(|&&p| p != giver && !excluded.contains(p))
             .cloned()
             .collect();
 
         if let Some(recipient) = available.iter().choose(&mut rng).cloned() {
             stack.push(recipient);
-            visited.insert(recipient);
+            unassigned.remove(recipient);
         } else {
             // Backtrack if no valid recipient found
             let last_giver = stack.pop()?;
-            visited.remove(last_giver);
+            unassigned.insert(last_giver);
 
             // Restore exclusions for the backtracked participant
             for exclusions in exclusion_graph.values_mut() {

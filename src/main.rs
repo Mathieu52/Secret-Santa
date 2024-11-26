@@ -53,7 +53,7 @@ fn generate_large_exclusions<'a>(
 
 
 fn main() {
-    let binding = generate_participants(50000);
+    let binding = generate_participants(10000);
     let participants = binding.iter().map(|s| &**s).collect();
     let mut exclusions = generate_large_exclusions(&participants, 0.1);
 
