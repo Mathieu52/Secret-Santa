@@ -35,20 +35,18 @@ where
 
     let mut unassigned = participants.clone();
 
-    // Choose a random starting participant
-    let start_participant = *participants.iter().max_by_key(|&&participant| exclusion_graph.get(participant).map_or(0, |exclusions| exclusions.len()))?;
+    // Choose a starting participant with the most exclusions
+    let start_participant = *participants
+        .iter()
+        .max_by_key(|&&participant| exclusion_graph.get(participant).map_or(0, |exclusions| exclusions.len()))?;
     stack.push(start_participant);
 
     unassigned.remove(start_participant);
 
     // Backtracking loop to build a valid cycle
     while stack.len() < participants.len() {
-
-        // Precompute available participants to minimize redundant filter checks
         let giver = *stack.last()?;
-        let excluded = exclusion_graph
-            .entry(giver)
-            .or_insert_with(HashSet::new);
+        let excluded = exclusion_graph.entry(giver).or_insert_with(HashSet::new);
 
         // Collect all non-excluded, non-visited participants
         let available: Vec<_> = unassigned
@@ -57,7 +55,7 @@ where
             .cloned()
             .collect();
 
-        if let Some(recipient) = available.iter().choose(&mut rng).cloned() {
+        if let Some(&recipient) = available.iter().choose(&mut rng) {
             stack.push(recipient);
             unassigned.remove(recipient);
         } else {
@@ -67,7 +65,7 @@ where
 
             // Restore exclusions for the backtracked participant
             for exclusions in exclusion_graph.values_mut() {
-                exclusions.insert(giver);
+                exclusions.insert(last_giver);
             }
         }
     }
@@ -75,14 +73,9 @@ where
     // Create pairs and close the cycle
     let secret_santa_pairs = stack
         .iter()
-        .cloned()
-        .tuple_windows()
-        .collect::<HashMap<_, _>>()
-        .into_iter()
-        .chain(
-            stack.first().zip(stack.last()).map(|(&first, &last)| (last, first)),
-        )
-        .collect::<HashMap<_, _>>();
+        .zip(stack.iter().cycle().skip(1))
+        .map(|(&giver, &recipient)| (giver, recipient))
+        .collect();
 
     Some(secret_santa_pairs)
 }
