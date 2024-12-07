@@ -1,27 +1,43 @@
 use std::collections::{HashMap, HashSet};
+use std::fmt::{Display, Formatter};
 use rand::Rng;
 use rand::seq::SliceRandom;
 use itertools::Itertools;
+use timing::Timer;
 
 mod secret_santa;
-use secret_santa::{generate_secret_santa, generate_secret_santa2};
+mod ui;
 
-fn generate_participants<'a>(number: usize) -> HashSet<String> {
+use secret_santa::{generate_secret_santa};
+
+#[derive(Eq, PartialEq, Hash)]
+struct Participant {
+    pub name: String
+}
+
+impl Display for Participant {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        return write!(f, "{}", self.name)
+    }
+}
+
+
+fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
     let mut participants = HashSet::with_capacity(number);
 
     for i in 1..number + 1 {
-        participants.insert(format!("Participant {}", i));
+        participants.insert(Participant {name: format!("Participant {}", i)});
     }
 
     participants
 }
 
 fn generate_large_exclusions<'a>(
-    participants: &HashSet<&'a str>,
+    participants: &HashSet<&'a Participant>,
     exclusion_probability: f64,
-) -> HashMap<&'a str, HashSet<&'a str>> {
+) -> HashMap<&'a Participant, HashSet<&'a Participant>> {
     let mut rng = rand::thread_rng();
-    let mut exclusions: HashMap<&'a str, HashSet<&'a str>> = HashMap::new();
+    let mut exclusions: HashMap<&'a Participant, HashSet<&'a Participant>> = HashMap::new();
 
     // Initialize exclusions for all participants
     for participant in participants.iter() {
@@ -50,16 +66,37 @@ fn generate_large_exclusions<'a>(
 
     exclusions
 }
+macro_rules! time_exec {
+    ($label:expr, $body:block) => {
+        {
+            let timer = Timer::with_label($label);
+            println!("------------------------------------------------------------------");
+            println!("{}: Starting execution", $label);
+            // Execute the body (the code passed to the macro)
+            let result = $body;
+            println!("{}: Execution finished in {:?}", $label, timer.stop());
+            println!("------------------------------------------------------------------");
 
-
+            result
+        }
+    };
+}
 fn main() {
-    let binding = generate_participants(10000);
-    let participants = binding.iter().map(|s| &**s).collect();
-    let mut exclusions = generate_large_exclusions(&participants, 0.1);
+    let binding: HashSet<_> = time_exec!("Binding generation", {
+        generate_participants(5000)
+    });
+    let participants: HashSet<_> = time_exec!("Participant generation", {
+        binding.iter().map(|s| s).collect()
+    });
+    let mut exclusions = time_exec!("Exclusions generation", {
+        generate_large_exclusions(&participants, 0.9)
+    });
 
-    println!("Start");
+    let results = time_exec!("Paring", {
+        generate_secret_santa(&participants, &mut exclusions)
+    });
 
-    match generate_secret_santa2(&participants, &mut exclusions) {
+    match results {
         Some(pairings) => {
             for (giver, receiver) in pairings {
                 println!("{} gives a gift to {}", giver, receiver);

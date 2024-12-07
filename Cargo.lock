@@ -8,6 +8,7 @@ version = "0.1.0"
 dependencies = [
  "itertools",
  "rand",
+ "timing",
 ]
 
 [[package]]
@@ -121,6 +122,12 @@ dependencies = [
  "quote",
  "unicode-ident",
 ]
+
+[[package]]
+name = "timing"
+version = "0.2.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0ef973380ab2960e2b4e49d552291930c217b947ee831f73000ebc5439074bf0"
 
 [[package]]
 name = "unicode-ident"
