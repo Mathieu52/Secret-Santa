@@ -7,20 +7,10 @@ use timing::Timer;
 
 mod secret_santa;
 mod ui;
+mod participant;
 
 use secret_santa::{generate_secret_santa};
-
-#[derive(Eq, PartialEq, Hash)]
-struct Participant {
-    pub name: String
-}
-
-impl Display for Participant {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        return write!(f, "{}", self.name)
-    }
-}
-
+use participant::Participant;
 
 fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
     let mut participants = HashSet::with_capacity(number);
