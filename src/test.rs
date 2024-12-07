@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use rand::Rng;
 use crate::participant::Participant;
 use crate::secret_santa::generate_secret_santa;
+use timing::Timer;
 
 fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
     let mut participants = HashSet::with_capacity(number);
