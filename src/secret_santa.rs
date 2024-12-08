@@ -23,7 +23,7 @@ fn exclusions_to_adjacency<'a>(
 
 /// Generates a Secret Santa pairing, ensuring exclusions are respected.
 pub(crate) fn generate_secret_santa<'a, T>(
-    participants: &HashSet<&'a T>,
+    participants: &[&'a T],
     exclusions: &mut HashMap<&'a T, HashSet<&'a T>>,
 ) -> Option<HashMap<&'a T, &'a T>>
 where
