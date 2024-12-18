@@ -22,30 +22,32 @@ fn exclusions_to_adjacency<'a>(
 }
 
 /// Generates a Secret Santa pairing, ensuring exclusions are respected.
-pub(crate) fn generate_secret_santa<'a, T>(
-    participants: &[&'a T],
+pub(crate) fn generate_secret_santa<'a, C, T>(
+    participants: C,
     exclusions: &mut HashMap<&'a T, HashSet<&'a T>>,
 ) -> Option<HashMap<&'a T, &'a T>>
 where
+    C: IntoIterator<Item = &'a T>,
     T: Eq + Hash,
 {
     let mut rng = rand::thread_rng();
     let mut exclusion_graph: HashMap<&'a T, HashSet<&'a T>> = exclusions.iter().map(|(&key, value)| (key, value.clone())).collect();
-    let mut stack = Vec::with_capacity(participants.len());
 
-    let mut unassigned = participants.clone();
+    let mut unassigned: HashSet<&'a T> = participants.into_iter().collect();
+
+    let mut stack = Vec::with_capacity(unassigned.len());
 
     // Choose a starting participant with the most exclusions
-    let start_participant = *participants
-        .iter()
-        .max_by_key(|&&participant| exclusion_graph.get(participant).map_or(0, |exclusions| exclusions.len()))?;
+    let start_participant = exclusion_graph.keys().into_iter()
+        .max_by_key(|&&participant| exclusion_graph.get(participant).map_or(0, |exclusions| exclusions.len()))?
+        .to_owned();
     stack.push(start_participant);
 
     unassigned.remove(start_participant);
 
     // Backtracking loop to build a valid cycle
-    while stack.len() < participants.len() {
-        let giver = *stack.last()?;
+    while !exclusion_graph.is_empty() {
+        let &giver = stack.last()?;
         let excluded = exclusion_graph.entry(giver).or_insert_with(HashSet::new);
 
         // Collect all non-excluded, non-visited participants

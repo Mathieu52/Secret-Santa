@@ -8,6 +8,7 @@ rand = "0.8.5"
 itertools = "0.13.0"
 timing = "0.2.3"
 
-egui = "0.29.1"
 eframe = "0.29.1"
 env_logger = "0.11.5"
+
+levenshtein = "1.0.5"

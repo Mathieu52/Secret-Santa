@@ -1,10 +1,12 @@
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use itertools::Itertools;
 use rand::Rng;
 use crate::participant::Participant;
 use crate::secret_santa::generate_secret_santa;
 use timing::Timer;
 
-fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
+pub fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
     let mut participants = HashSet::with_capacity(number);
 
     for i in 1..number + 1 {
@@ -14,20 +16,24 @@ fn generate_participants<'a>(number: usize) -> HashSet<Participant> {
     participants
 }
 
-fn generate_large_exclusions<'a>(
-    participants: &HashSet<&'a Participant>,
+fn generate_large_exclusions<'a, T, C>(
+    participants: C,
     exclusion_probability: f64,
-) -> HashMap<&'a Participant, HashSet<&'a Participant>> {
+) -> HashMap<&'a T, HashSet<&'a T>>
+where
+    C: IntoIterator<Item = &'a T>,
+    T: Eq + Hash,
+{
     let mut rng = rand::thread_rng();
-    let mut exclusions: HashMap<&'a Participant, HashSet<&'a Participant>> = HashMap::new();
+    let mut exclusions: HashMap<&'a T, HashSet<&'a T>> = HashMap::new();
 
+    let participants_vec: Vec<_> = participants.into_iter().collect();
     // Initialize exclusions for all participants
-    for participant in participants.iter() {
-        exclusions.insert(*participant, HashSet::new());
+    for &participant in participants_vec.iter() {
+        exclusions.insert(participant, HashSet::new());
     }
 
     // Create exclusions by iterating over pairs
-    let participants_vec: Vec<_> = participants.iter().collect();
     for i in 0..participants_vec.len() {
         for j in i + 1..participants_vec.len() {
             let giver = participants_vec[i];
@@ -38,10 +44,10 @@ fn generate_large_exclusions<'a>(
             let exclusion_receiver_to_giver = rng.gen_bool(exclusion_probability);
 
             if exclusion_giver_to_receiver {
-                exclusions.entry(*giver).or_insert_with(HashSet::new).insert(*receiver);
+                exclusions.entry(giver).or_insert_with(HashSet::new).insert(receiver);
             }
             if exclusion_receiver_to_giver {
-                exclusions.entry(*receiver).or_insert_with(HashSet::new).insert(*giver);
+                exclusions.entry(receiver).or_insert_with(HashSet::new).insert(giver);
             }
         }
     }
@@ -65,17 +71,17 @@ macro_rules! time_exec {
 }
 pub fn run_test() {
     let binding: HashSet<_> = time_exec!("Binding generation", {
-        generate_participants(5000)
+        generate_participants(500)
     });
-    let participants: HashSet<_> = time_exec!("Participant generation", {
+    let participants: Vec<_> = time_exec!("Participant generation", {
         binding.iter().map(|s| s).collect()
     });
     let mut exclusions = time_exec!("Exclusions generation", {
-        generate_large_exclusions(&participants, 0.9)
+        generate_large_exclusions(participants.clone(), 0.9)
     });
 
     let results = time_exec!("Paring", {
-        generate_secret_santa(&participants, &mut exclusions)
+        generate_secret_santa(participants, &mut exclusions)
     });
 
     match results {

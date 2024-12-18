@@ -2,20 +2,21 @@ mod secret_santa;
 mod ui;
 mod test;
 mod participant;
+mod listview;
 
+use eframe::egui;
+use crate::test::run_test;
 use crate::ui::SecretSanta;
 
-fn main() -> eframe::Result {
+fn main() -> eframe::Result<()> {
+    run_test();
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
         ..Default::default()
     };
     eframe::run_native(
         "Secret Santa",
         options,
-        Box::new(|cc| {
-            Ok(Box::<SecretSanta>::default())
-        }),
+        Box::new(|cc| Ok(Box::new(SecretSanta::default())))
     )
 }

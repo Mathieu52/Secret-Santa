@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-#[derive(Eq, PartialEq, Hash)]
+#[derive(Eq, PartialEq, Hash, Clone)]
 pub struct Participant {
     pub name: String
 }
