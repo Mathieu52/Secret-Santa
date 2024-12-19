@@ -39,5 +39,7 @@ pub trait ItemTrait {
     fn selected_item(&self, _data: Self::Data<'_>) {}
 
     /// 是否符合搜索条件
-    fn on_search(&self, text: &str, _data: Self::Data<'_>) -> bool;
+    fn show_on_search(&self, text: &str, _data: Self::Data<'_>) -> bool;
+
+    fn score_on_search(&self, text: &str, _data: Self::Data<'_>) -> usize;
 }

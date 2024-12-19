@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use eframe::egui;
-use eframe::egui::{Align, Color32, Direction, Frame, Label, Layout, RichText, Rounding};
+use eframe::egui::{Align, Color32, Direction, Frame, Label, Layout, RichText, Rounding, Sense};
 use eframe::egui::CursorIcon::Text;
 use eframe::egui::panel::Side;
 use egui::{Context, SidePanel, CentralPanel, TextEdit, ComboBox, Widget, Ui, Response, ScrollArea, SelectableLabel};
@@ -34,6 +34,7 @@ impl ItemTrait for Participant {
 
     fn show(&self, selected: bool, hovered: bool, ctx: &egui::Context, ui: &mut egui::Ui, _data: Self::Data<'_>) {
         ui.horizontal(|ui| {
+            ui.style_mut().interaction.selectable_labels = false;
             ui.label(self.name.clone());
 
             // Add a filler space to occupy remaining width
@@ -43,8 +44,13 @@ impl ItemTrait for Participant {
         });
     }
 
-    fn on_search(&self, text: &str, _data: Self::Data<'_>) -> bool {
-        self.name.contains(text)
+    fn show_on_search(&self, text: &str, _data: Self::Data<'_>) -> bool {
+        true
+        //self.name.contains(text)
+    }
+
+    fn score_on_search(&self, text: &str, _data: Self::Data<'_>) -> usize {
+        levenshtein(text, &*self.name.clone())
     }
 }
 

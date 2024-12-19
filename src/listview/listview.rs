@@ -1,11 +1,13 @@
-use eframe::egui::{
-    Align, Id, Label, Layout, Margin, RichText, Rounding, ScrollArea, Sense, TextEdit,
-};
+use eframe::egui::{Align, Color32, Id, Label, Layout, Margin, PointerButton, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
+use std::sync::{Arc, Mutex};
 use eframe::egui;
+use eframe::glow::COLOR;
+use itertools::{Itertools, sorted};
 use crate::listview::item_trait::ItemTrait;
-
-pub struct ListView<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> {
+pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> {
     pub(crate) title: Cow<'a, str>,
     pub(crate) hold_text: Option<Cow<'a, str>>,
     pub(crate) items: L,
@@ -16,7 +18,7 @@ pub struct ListView<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> {
     pub(crate) striped: bool,
 }
 
-impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
+impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
     pub fn new(items: L, data: W::Data<'a>) -> Self {
         Self {
             title: Cow::Borrowed("Search"),
@@ -31,7 +33,7 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
     }
 }
 
-impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
+impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
     pub fn title(mut self, title: Cow<'a, str>) -> Self {
         self.title = title;
         self
@@ -66,8 +68,8 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
         self,
         ctx: &egui::Context,
         ui: &mut egui::Ui,
-    ) -> egui::InnerResponse<Option<&'a W>> {
-        let mut selected_item = None;
+    ) -> egui::InnerResponse<HashSet<&'a W>> {
+        let mut selected_items: HashSet<&'a W> = HashSet::new();
 
         let mut resp = ui.vertical(|outer_ui| {
             let ListView {
@@ -82,15 +84,36 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
             } = self;
 
             let resp = outer_ui.scope(|ui| {
+                let start_click_id = ui.auto_id_with("start_click");
+                let selecting_id = ui.auto_id_with("selecting");
+                let end_click_id = ui.auto_id_with("end_click");
+                let in_selection_id = ui.auto_id_with("in_selection");
+
+                let mut start_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(start_click_id)).unwrap_or_default();
+                let mut selecting = ui.data_mut(|d| d.get_temp(selecting_id)).unwrap_or(false);
+                let old_selecting = selecting.clone();
+                let mut end_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(end_click_id)).unwrap_or_default();
+
+                let mut in_selection_arc: Arc<Mutex<HashSet<Id>>> = ui.data_mut(|d| d.get_temp(in_selection_id)).unwrap_or_default();
+                let old_in_selection = in_selection_arc.lock().unwrap();
+                let mut in_selection = HashSet::new();
+
+                let selected_area = if selecting {
+                    start_click.zip(end_click).map(|(min, max)| Rect { min: Pos2::new(min.x.min(max.x), min.y.min(max.y)), max: Pos2::new(min.x.max(max.x), min.y.max(max.y)) })
+                } else {
+                    None
+                };
+
                 let root_id = ui.auto_id_with("ListView");
+                let selected_id = ui.auto_id_with("selected");
                 let search_id = root_id.with("search");
-                let selected_id = root_id.with("selected");
                 let hovered_id = root_id.with("hovered");
 
                 let mut search: String = ui.data_mut(|d| d.get_temp(search_id)).unwrap_or_default();
-                let mut selected: Option<Id> =
-                    ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
-                let old_selected = selected;
+
+                let mut selected_arc: Arc<Mutex<HashSet<Id>>> = ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
+                let mut selected = selected_arc.lock().unwrap();
+                let old_selected = selected.clone();
                 let mut hovered: Option<Id> =
                     ui.data_mut(|d| d.get_temp(hovered_id)).unwrap_or_default();
 
@@ -118,24 +141,41 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
                 ui.separator();
 
                 ScrollArea::vertical()
-                    .id_source(root_id.with("list"))
+                    .id_salt(root_id.with("list"))
                     .hscroll(true)
+                    .drag_to_scroll(false)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         egui::Grid::new("list view container")
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
-                                for item in items {
-                                    let id = item.id(data);
-                                    let checked = selected == Some(id);
-                                    let hover = hovered == Some(id);
+                                let sorted_items = items.sorted_by(| item_a, item_b | Ord::cmp(&item_a.score_on_search(&search, data), &item_b.score_on_search(&search, data)));
 
-                                    if checked {
-                                        selected_item = Some(item);
+                                ui.input(|i| {
+                                    if i.pointer.button_pressed(PointerButton::Primary) {
+                                        start_click = i.pointer.latest_pos();
+                                        selecting = true;
+                                        selected.clear();
                                     }
 
-                                    if search.is_empty() || item.on_search(&search, data) {
+                                    if i.pointer.button_down(PointerButton::Primary) {
+                                        end_click = i.pointer.latest_pos();
+                                    }
+
+                                    if i.pointer.button_released(PointerButton::Primary) {
+                                        selecting = false;
+                                        selected.extend(old_in_selection.iter());
+                                        in_selection.clear();
+                                    }
+                                });
+
+                                for item in sorted_items {
+                                    let id = item.id(data);
+                                    let checked = selected.contains(&id) || old_in_selection.contains(&id);
+                                    let hover = hovered == Some(id);
+
+                                    if search.is_empty() || item.show_on_search(&search, data) {
                                         let mut child_frame = egui::Frame::default()
                                             .inner_margin(inner_margin)
                                             .outer_margin(outer_margin)
@@ -147,6 +187,7 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
                                         } else {
                                             item.style_normal(&mut child_frame);
                                         }
+
                                         let mut interact_area = child_frame
                                             .show(ui, |ui| {
                                                 item.show(checked, hover, ctx, ui, data);
@@ -157,6 +198,7 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
                                                 )
                                             })
                                             .inner;
+
                                         if let Some(tips) = item.hovered_text() {
                                             interact_area = interact_area.on_hover_text(tips);
                                         }
@@ -165,9 +207,16 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
                                             hovered = Some(id);
                                         }
 
-                                        if interact_area.clicked() && !checked {
-                                            selected = Some(id);
-                                            selected_item = Some(item);
+                                        if selected_area.map_or(false, |area| interact_area.rect.intersects(area)) {
+                                            in_selection.insert(id);
+                                        } else if interact_area.clicked() && !checked {
+                                            selected.clear();
+                                            selected.insert(id);
+                                        }
+
+                                        if checked {
+                                            item.selected_item(data);
+                                            selected_items.insert(item);
                                         }
 
                                         ui.end_row();
@@ -176,17 +225,18 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
                             });
                     });
 
-                if let Some(item) = selected_item {
-                    item.selected_item(data);
-                }
-
                 ui.data_mut(|d| {
                     d.insert_temp(search_id, search);
-                    d.insert_temp(selected_id, selected);
+                    d.insert_temp(selected_id, Arc::new(Mutex::new(selected.clone())));
                     d.insert_temp(hovered_id, hovered);
+
+                    d.insert_temp(start_click_id, start_click);
+                    d.insert_temp(selecting_id, selecting);
+                    d.insert_temp(end_click_id, end_click);
+                    d.insert_temp(in_selection_id, Arc::new(Mutex::new(in_selection.clone())));
                 });
 
-                old_selected != selected
+                old_selected != *selected || in_selection != *old_in_selection
             });
 
             resp.inner
@@ -196,6 +246,6 @@ impl<'a, W: ItemTrait + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
             resp.response.mark_changed();
         }
 
-        egui::InnerResponse::new(selected_item, resp.response)
+        egui::InnerResponse::new(selected_items, resp.response)
     }
 }
