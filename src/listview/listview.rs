@@ -137,14 +137,20 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                             .show(ui, |ui| {
                                 let sorted_items = items.sorted_by(| item_a, item_b | Ord::cmp(&item_a.score_on_search(&search, data), &item_b.score_on_search(&search, data)));
 
+                                let toggle_mode = ui.input(|i| i.modifiers.command);
+
                                 ui.input(|i| area_select.update(&i.pointer));
 
-                                if area_select.is_pressed() {
+                                if area_select.is_pressed() && !toggle_mode {
                                     selected.clear();
                                 }
 
                                 if area_select.is_released() {
-                                    selected.extend(old_hovered.iter());
+                                    if toggle_mode {
+                                        toggle_elements(&mut selected, old_hovered.iter().copied());
+                                    } else {
+                                        selected.extend(old_hovered.iter());
+                                    }
                                     hovered.clear();
                                 }
 
@@ -152,13 +158,16 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                     let id = item.id(data);
                                     let checked = selected.contains(&id);
                                     let hover = old_hovered.contains(&id);
+                                    let remove = checked && hover && toggle_mode;
 
                                     if search.is_empty() || item.show_on_search(&search, data) {
                                         let mut child_frame = egui::Frame::default()
                                             .inner_margin(inner_margin)
                                             .outer_margin(outer_margin)
                                             .rounding(rounding);
-                                        if checked {
+                                        if remove {
+                                            item.style_removal(&mut child_frame)
+                                        } else if checked {
                                             item.style_clicked(&mut child_frame);
                                         } else if hover {
                                             item.style_hovered(&mut child_frame);
@@ -188,8 +197,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                         if selected_area.map_or(false, |area| interact_area.rect.intersects(area)) {
                                             hovered.insert(id);
                                         } else if interact_area.clicked() && !checked {
-                                            selected.clear();
-                                            selected.insert(id);
+                                            if toggle_mode {
+                                                toggle_elements(&mut selected, [id]);
+                                            } else {
+                                                selected.clear();
+                                                selected.insert(id);
+                                            }
                                         }
 
                                         if checked {
@@ -222,6 +235,16 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
         }
 
         egui::InnerResponse::new(selected_items, resp.response)
+    }
+}
+
+fn toggle_elements<T: Eq + Hash>(set: &mut HashSet<T>, elements: impl IntoIterator<Item = T>){
+    for elem in elements {
+        if set.contains(&elem) {
+            set.remove(&elem);
+        } else {
+            set.insert(elem);
+        }
     }
 }
 

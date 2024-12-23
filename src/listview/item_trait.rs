@@ -20,6 +20,10 @@ pub trait ItemTrait {
         frame.fill = Color32::LIGHT_YELLOW;
     }
 
+    fn style_removal(&self, frame: &mut Frame) {
+        frame.fill = Color32::LIGHT_RED;
+    }
+
     /// 在列表中的显示
     fn show(
         &self,
