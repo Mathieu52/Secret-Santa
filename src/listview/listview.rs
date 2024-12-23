@@ -1,4 +1,4 @@
-use eframe::egui::{Align, Color32, Id, Label, Layout, Margin, PointerButton, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
+use eframe::egui::{Align, Color32, Id, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
@@ -84,24 +84,10 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
             } = self;
 
             let resp = outer_ui.scope(|ui| {
-                let start_click_id = ui.auto_id_with("start_click");
-                let selecting_id = ui.auto_id_with("selecting");
-                let end_click_id = ui.auto_id_with("end_click");
-                let in_selection_id = ui.auto_id_with("in_selection");
+                let area_select_id = ui.auto_id_with("area_select");
 
-                let mut start_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(start_click_id)).unwrap_or_default();
-                let mut selecting = ui.data_mut(|d| d.get_temp(selecting_id)).unwrap_or(false);
-                let mut end_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(end_click_id)).unwrap_or_default();
-
-                let mut in_selection_arc: Arc<Mutex<HashSet<Id>>> = ui.data_mut(|d| d.get_temp(in_selection_id)).unwrap_or_default();
-                let old_in_selection = in_selection_arc.lock().unwrap();
-                let mut in_selection = HashSet::new();
-
-                let selected_area = if selecting {
-                    start_click.zip(end_click).map(|(min, max)| Rect { min: Pos2::new(min.x.min(max.x), min.y.min(max.y)), max: Pos2::new(min.x.max(max.x), min.y.max(max.y)) })
-                } else {
-                    None
-                };
+                let mut area_select: AreaSelect = ui.data_mut(|d| d.get_temp(area_select_id)).unwrap_or_default();
+                let selected_area = area_select.area();
 
                 let root_id = ui.auto_id_with("ListView");
                 let selected_id = ui.auto_id_with("selected");
@@ -110,11 +96,11 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 
                 let mut search: String = ui.data_mut(|d| d.get_temp(search_id)).unwrap_or_default();
 
-                let mut selected_arc: Arc<Mutex<HashSet<Id>>> = ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
-                let mut selected = selected_arc.lock().unwrap();
+                let mut selected: HashSet<Id> = ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
                 let old_selected = selected.clone();
-                let mut hovered: Option<Id> =
-                    ui.data_mut(|d| d.get_temp(hovered_id)).unwrap_or_default();
+
+                let old_hovered: HashSet<Id> = ui.data_mut(|d| d.get_temp(hovered_id)).unwrap_or_default();
+                let mut hovered = HashSet::new();
 
                 ui.horizontal_top(|ui| {
                     ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
@@ -151,28 +137,21 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                             .show(ui, |ui| {
                                 let sorted_items = items.sorted_by(| item_a, item_b | Ord::cmp(&item_a.score_on_search(&search, data), &item_b.score_on_search(&search, data)));
 
-                                ui.input(|i| {
-                                    if i.pointer.button_pressed(PointerButton::Primary) {
-                                        start_click = i.pointer.latest_pos();
-                                        selecting = true;
-                                        selected.clear();
-                                    }
+                                ui.input(|i| area_select.update(&i.pointer));
 
-                                    if i.pointer.button_down(PointerButton::Primary) {
-                                        end_click = i.pointer.latest_pos();
-                                    }
+                                if area_select.is_pressed() {
+                                    selected.clear();
+                                }
 
-                                    if i.pointer.button_released(PointerButton::Primary) {
-                                        selecting = false;
-                                        selected.extend(old_in_selection.iter());
-                                        in_selection.clear();
-                                    }
-                                });
+                                if area_select.is_released() {
+                                    selected.extend(old_hovered.iter());
+                                    hovered.clear();
+                                }
 
                                 for item in sorted_items {
                                     let id = item.id(data);
-                                    let checked = selected.contains(&id) || old_in_selection.contains(&id);
-                                    let hover = hovered == Some(id);
+                                    let checked = selected.contains(&id);
+                                    let hover = old_hovered.contains(&id);
 
                                     if search.is_empty() || item.show_on_search(&search, data) {
                                         let mut child_frame = egui::Frame::default()
@@ -202,12 +181,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                             interact_area = interact_area.on_hover_text(tips);
                                         }
 
-                                        if interact_area.hovered() && hovered != Some(id) {
-                                            hovered = Some(id);
+                                        if interact_area.hovered() {
+                                            hovered.insert(id);
                                         }
 
                                         if selected_area.map_or(false, |area| interact_area.rect.intersects(area)) {
-                                            in_selection.insert(id);
+                                            hovered.insert(id);
                                         } else if interact_area.clicked() && !checked {
                                             selected.clear();
                                             selected.insert(id);
@@ -226,16 +205,13 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 
                 ui.data_mut(|d| {
                     d.insert_temp(search_id, search);
-                    d.insert_temp(selected_id, Arc::new(Mutex::new(selected.clone())));
-                    d.insert_temp(hovered_id, hovered);
+                    d.insert_temp(selected_id, selected.clone());
+                    d.insert_temp(hovered_id, hovered.clone());
 
-                    d.insert_temp(start_click_id, start_click);
-                    d.insert_temp(selecting_id, selecting);
-                    d.insert_temp(end_click_id, end_click);
-                    d.insert_temp(in_selection_id, Arc::new(Mutex::new(in_selection.clone())));
+                    d.insert_temp(area_select_id, area_select);
                 });
 
-                old_selected != *selected || in_selection != *old_in_selection
+                old_selected != selected || hovered != old_hovered
             });
 
             resp.inner
@@ -246,5 +222,55 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
         }
 
         egui::InnerResponse::new(selected_items, resp.response)
+    }
+}
+
+#[derive(Default, Copy, Clone)]
+struct AreaSelect {
+    start: Option<Pos2>,
+    end: Option<Pos2>,
+
+    pressed: bool,
+    down: bool,
+    released: bool,
+}
+
+impl AreaSelect {
+    pub fn is_pressed(&self) -> bool {
+        self.pressed
+    }
+    pub fn is_down(&self) -> bool {
+        self.down
+    }
+
+    pub fn is_released(&self) -> bool {
+        self.released
+    }
+
+    pub fn area(&self) -> Option<Rect> {
+        if self.down {
+            self.start.zip(self.end).map(|(start, end)| {
+                let min = Pos2::new(start.x.min(end.x), start.y.min(end.y));
+                let max = Pos2::new(start.x.max(end.x), start.y.max(end.y));
+
+                Rect { min, max }
+            })
+        } else {
+            None
+        }
+    }
+
+    pub fn update(&mut self, pointer_state: &PointerState) {
+        self.pressed = pointer_state.button_pressed(PointerButton::Primary);
+        self.down = pointer_state.button_down(PointerButton::Primary);
+        self.released =pointer_state.button_released(PointerButton::Primary);
+
+        if self.pressed {
+            self.start = pointer_state.latest_pos();
+        }
+
+        if self.down {
+            self.end = pointer_state.latest_pos();
+        }
     }
 }
