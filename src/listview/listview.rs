@@ -91,7 +91,6 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 
                 let mut start_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(start_click_id)).unwrap_or_default();
                 let mut selecting = ui.data_mut(|d| d.get_temp(selecting_id)).unwrap_or(false);
-                let old_selecting = selecting.clone();
                 let mut end_click: Option<Pos2> = ui.data_mut(|d| d.get_temp(end_click_id)).unwrap_or_default();
 
                 let mut in_selection_arc: Arc<Mutex<HashSet<Id>>> = ui.data_mut(|d| d.get_temp(in_selection_id)).unwrap_or_default();
