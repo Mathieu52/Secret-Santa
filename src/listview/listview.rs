@@ -1,15 +1,11 @@
-use eframe::egui::{Align, Color32, Id, Key, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
+use eframe::egui::{Align, Id, Key, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, ScrollArea, Sense, TextEdit};
 use std::borrow::Cow;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashSet};
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
 use eframe::egui;
-use eframe::egui::debug_text::print;
-use eframe::glow::COLOR;
-use itertools::{enumerate, Itertools, sorted};
-use timing::start;
+use itertools::{Itertools};
 use crate::listview::item_trait::ItemTrait;
-use crate::listview::listview::SelectMode::{NORMAL, RANGE, TOGGLE};
+use crate::listview::listview::SelectMode::{NORMAL, RANGE};
 
 pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> {
     pub(crate) title: Cow<'a, str>,
@@ -94,7 +90,6 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                 let selected_id = root_id.with("selected");
                 let hovered_id = root_id.with("hovered");
                 let range_select_id = root_id.with("range_close");
-                let area_select_id = ui.auto_id_with("area_select");
                 let mode_id = ui.auto_id_with("mode");
                 let toggle_id = ui.auto_id_with("toggle");
 
@@ -107,9 +102,6 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 
                 let mut old_range_select: RangeSelect = ui.data_mut(|d| d.get_temp(range_select_id)).unwrap_or_default();
                 let mut range_select: RangeSelect = old_range_select.clone();
-
-                let mut area_select: AreaSelect = ui.data_mut(|d| d.get_temp(area_select_id)).unwrap_or_default();
-                let selected_area = area_select.area();
 
                 let mut mode = ui.data_mut(|d| d.get_temp(mode_id)).unwrap_or_default();
                 let mut toggle = ui.data_mut(|d| d.get_temp(toggle_id)).unwrap_or_default();
@@ -309,7 +301,6 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                     d.insert_temp(selected_id, selected.clone());
                     d.insert_temp(hovered_id, hovered.clone());
                     d.insert_temp(range_select_id, range_select.clone());
-                    d.insert_temp(area_select_id, area_select);
                     d.insert_temp(mode_id, mode);
                     d.insert_temp(toggle_id, toggle);
                 });
@@ -331,7 +322,6 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 #[derive(Eq, PartialEq, Copy, Clone, Debug)]
 enum SelectMode {
     NORMAL,
-    TOGGLE,
     RANGE,
 }
 
