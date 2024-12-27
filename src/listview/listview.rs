@@ -1,4 +1,4 @@
-use eframe::egui::{Align, Id, Key, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, ScrollArea, Sense, TextEdit};
+use eframe::egui::{Align, Id, Key, Label, Layout, Margin, PointerButton, RichText, Rounding, ScrollArea, Sense, TextEdit};
 use std::borrow::Cow;
 use std::collections::{HashSet};
 use std::hash::Hash;
@@ -328,56 +328,6 @@ enum SelectMode {
 impl Default for SelectMode {
     fn default() -> Self {
         NORMAL
-    }
-}
-
-#[derive(Default, Copy, Clone)]
-struct AreaSelect {
-    start: Option<Pos2>,
-    end: Option<Pos2>,
-
-    pressed: bool,
-    down: bool,
-    released: bool,
-}
-
-impl AreaSelect {
-    pub fn is_pressed(&self) -> bool {
-        self.pressed
-    }
-    pub fn is_down(&self) -> bool {
-        self.down
-    }
-
-    pub fn is_released(&self) -> bool {
-        self.released
-    }
-
-    pub fn area(&self) -> Option<Rect> {
-        if self.down {
-            self.start.zip(self.end).map(|(start, end)| {
-                let min = Pos2::new(start.x.min(end.x), start.y.min(end.y));
-                let max = Pos2::new(start.x.max(end.x), start.y.max(end.y));
-
-                Rect { min, max }
-            })
-        } else {
-            None
-        }
-    }
-
-    pub fn update(&mut self, pointer_state: &PointerState) {
-        self.pressed = pointer_state.button_pressed(PointerButton::Primary);
-        self.down = pointer_state.button_down(PointerButton::Primary);
-        self.released =pointer_state.button_released(PointerButton::Primary);
-
-        if self.pressed {
-            self.start = pointer_state.latest_pos();
-        }
-
-        if self.down {
-            self.end = pointer_state.latest_pos();
-        }
     }
 }
 
