@@ -96,6 +96,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                 let range_select_id = root_id.with("range_close");
                 let area_select_id = ui.auto_id_with("area_select");
                 let mode_id = ui.auto_id_with("mode");
+                let toggle_id = ui.auto_id_with("toggle");
 
                 let mut search: String = ui.data_mut(|d| d.get_temp(search_id)).unwrap_or_default();
                 let mut selected: HashSet<Id> = ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
@@ -111,6 +112,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                 let selected_area = area_select.area();
 
                 let mut mode = ui.data_mut(|d| d.get_temp(mode_id)).unwrap_or_default();
+                let mut toggle = ui.data_mut(|d| d.get_temp(toggle_id)).unwrap_or_default();
 
                 // Header with title and search bar
                 ui.horizontal_top(|ui| {
@@ -151,17 +153,16 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                     Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data))
                                 });
 
-                                let (pressed, down, released, interact_pos, key_up, key_down) = ui.input(|i| {
+                                let (pressed, down, released, key_up, key_down) = ui.input(|i| {
                                     let pressed = i.pointer.button_pressed(PointerButton::Primary);
                                     let down = i.pointer.button_down(PointerButton::Primary);
                                     let released = i.pointer.button_released(PointerButton::Primary);
 
-                                    (pressed, down, released, i.pointer.interact_pos(), i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown))
+                                    (pressed, down, released, i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown))
                                 });
 
-                                let active_mode = if ui.input(|i| i.modifiers.command_only()) {
-                                    TOGGLE
-                                } else if ui.input(|i| i.modifiers.shift_only()) {
+                                let active_toggle = ui.input(|i| i.modifiers.command);
+                                let active_mode = if ui.input(|i| i.modifiers.shift) {
                                     RANGE
                                 } else {
                                     NORMAL
@@ -176,16 +177,16 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                 }
 
                                 if pressed {
+                                    toggle = active_toggle;
                                     mode = active_mode;
 
-                                    if mode == NORMAL {
+                                    if mode == NORMAL && !toggle {
                                         selected.clear();
                                     }
                                 }
 
-
                                 let close_range = if mode == RANGE {
-                                    active_mode != RANGE
+                                    active_mode != mode || active_toggle != toggle
                                 } else { released };
 
                                 let mut inside_range_select = false;
@@ -195,7 +196,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                     let id = item.id(data);
                                     let mut checked = selected.contains(&id);
                                     let mut hover = old_hovered.contains(&id);
-                                    let remove = checked && hover && mode == TOGGLE;
+                                    let remove = checked && hover && toggle;
 
                                     let mut child_frame = egui::Frame::default()
                                         .inner_margin(inner_margin)
@@ -237,16 +238,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                         }
                                     }
 
-                                    if let Some(interact_pos) = interact_pos {
-                                        if interact_area.interact_rect.contains(interact_pos) {
-                                            if down {
-                                                if old_range_select.start_id.is_none() {
-                                                    range_select.start_id = Some(id);
-                                                }
-
-                                                range_select.end_id = Some(id);
-                                            }
+                                    if ui.rect_contains_pointer(interact_area.interact_rect) && down {
+                                        if old_range_select.start_id.is_none() {
+                                            range_select.start_id = Some(id);
                                         }
+
+                                        range_select.end_id = Some(id);
                                     }
 
                                     let mut in_selection = false;
@@ -265,41 +262,21 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                                         }
                                     }
 
-                                    if interact_area.clicked() && mode != RANGE {
-                                        match mode {
-                                            NORMAL => {
-                                                checked = true;
-                                            }
-                                            TOGGLE => {
-                                                checked = !checked;
-                                            },
-                                            RANGE => {
-                                                //checked = true;
-                                            }
+                                    if interact_area.clicked() && mode == NORMAL {
+                                        if toggle {
+                                            checked = !checked;
+                                        } else {
+                                            checked = true;
                                         }
                                     } else if in_selection {
-                                        match mode {
-                                            NORMAL => {
-                                                if close_range {
-                                                    checked = true;
-                                                } else {
-                                                    hovered.insert(id);
-                                                }
+                                        if close_range {
+                                            if toggle {
+                                                checked = !checked;
+                                            } else {
+                                                checked = true;
                                             }
-                                            TOGGLE => {
-                                                if close_range {
-                                                    checked = !checked;
-                                                } else {
-                                                    hovered.insert(id);
-                                                }
-                                            },
-                                            RANGE => {
-                                                if close_range {
-                                                    checked = true;
-                                                } else {
-                                                    hovered.insert(id);
-                                                }
-                                            }
+                                        } else {
+                                            hovered.insert(id);
                                         }
                                     }
 
@@ -334,6 +311,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                     d.insert_temp(range_select_id, range_select.clone());
                     d.insert_temp(area_select_id, area_select);
                     d.insert_temp(mode_id, mode);
+                    d.insert_temp(toggle_id, toggle);
                 });
 
                 old_selected != selected || hovered != old_hovered || old_range_select != range_select
