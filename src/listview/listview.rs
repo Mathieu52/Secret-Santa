@@ -1,12 +1,16 @@
-use eframe::egui::{Align, Color32, Id, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
+use eframe::egui::{Align, Color32, Id, Key, Label, Layout, Margin, PointerButton, PointerState, Pos2, Rect, RichText, Rounding, scroll_area, ScrollArea, Sense, Stroke, TextEdit};
 use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
+use eframe::egui::debug_text::print;
 use eframe::glow::COLOR;
-use itertools::{Itertools, sorted};
+use itertools::{enumerate, Itertools, sorted};
+use timing::start;
 use crate::listview::item_trait::ItemTrait;
+use crate::listview::listview::SelectMode::{NORMAL, RANGE, TOGGLE};
+
 pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> {
     pub(crate) title: Cow<'a, str>,
     pub(crate) hold_text: Option<Cow<'a, str>>,
@@ -84,24 +88,31 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
             } = self;
 
             let resp = outer_ui.scope(|ui| {
-                let area_select_id = ui.auto_id_with("area_select");
-
-                let mut area_select: AreaSelect = ui.data_mut(|d| d.get_temp(area_select_id)).unwrap_or_default();
-                let selected_area = area_select.area();
-
+                // Initialize IDs and temporary state variables
                 let root_id = ui.auto_id_with("ListView");
-                let selected_id = ui.auto_id_with("selected");
                 let search_id = root_id.with("search");
+                let selected_id = root_id.with("selected");
                 let hovered_id = root_id.with("hovered");
+                let range_select_id = root_id.with("range_close");
+                let area_select_id = ui.auto_id_with("area_select");
+                let mode_id = ui.auto_id_with("mode");
 
                 let mut search: String = ui.data_mut(|d| d.get_temp(search_id)).unwrap_or_default();
-
                 let mut selected: HashSet<Id> = ui.data_mut(|d| d.get_temp(selected_id)).unwrap_or_default();
                 let old_selected = selected.clone();
 
                 let old_hovered: HashSet<Id> = ui.data_mut(|d| d.get_temp(hovered_id)).unwrap_or_default();
                 let mut hovered = HashSet::new();
 
+                let mut old_range_select: RangeSelect = ui.data_mut(|d| d.get_temp(range_select_id)).unwrap_or_default();
+                let mut range_select: RangeSelect = old_range_select.clone();
+
+                let mut area_select: AreaSelect = ui.data_mut(|d| d.get_temp(area_select_id)).unwrap_or_default();
+                let selected_area = area_select.area();
+
+                let mut mode = ui.data_mut(|d| d.get_temp(mode_id)).unwrap_or_default();
+
+                // Header with title and search bar
                 ui.horizontal_top(|ui| {
                     ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
                         ui.visuals_mut().button_frame = true;
@@ -125,106 +136,207 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
 
                 ui.separator();
 
+                // Scrollable list of items
                 ScrollArea::vertical()
                     .id_salt(root_id.with("list"))
                     .hscroll(true)
                     .drag_to_scroll(false)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
-                        egui::Grid::new("list view container")
+                        egui::Grid::new("list_view_container")
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
-                                let sorted_items = items.sorted_by(| item_a, item_b | Ord::cmp(&item_a.score_on_search(&search, data), &item_b.score_on_search(&search, data)));
+                                let sorted_items = items.filter(|&item| search.is_empty() || item.show_on_search(&search, data)).sorted_by(|a, b| {
+                                    Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data))
+                                });
 
-                                let toggle_mode = ui.input(|i| i.modifiers.command);
+                                let (pressed, down, released, interact_pos, key_up, key_down) = ui.input(|i| {
+                                    let pressed = i.pointer.button_pressed(PointerButton::Primary);
+                                    let down = i.pointer.button_down(PointerButton::Primary);
+                                    let released = i.pointer.button_released(PointerButton::Primary);
 
-                                ui.input(|i| area_select.update(&i.pointer));
+                                    (pressed, down, released, i.pointer.interact_pos(), i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown))
+                                });
 
-                                if area_select.is_pressed() && !toggle_mode {
-                                    selected.clear();
-                                }
+                                let active_mode = if ui.input(|i| i.modifiers.command_only()) {
+                                    TOGGLE
+                                } else if ui.input(|i| i.modifiers.shift_only()) {
+                                    RANGE
+                                } else {
+                                    NORMAL
+                                };
 
-                                if area_select.is_released() {
-                                    if toggle_mode {
-                                        toggle_elements(&mut selected, old_hovered.iter().copied());
-                                    } else {
-                                        selected.extend(old_hovered.iter());
+                                if mode != active_mode {
+                                    if active_mode == RANGE && selected.len() == 1 {
+                                        if let Some(first_id) = selected.iter().next() {
+                                            range_select.start_id = Some(*first_id);
+                                        }
                                     }
-                                    hovered.clear();
                                 }
 
+                                if pressed {
+                                    mode = active_mode;
+
+                                    if mode == NORMAL {
+                                        selected.clear();
+                                    }
+                                }
+
+
+                                let close_range = if mode == RANGE {
+                                    active_mode != RANGE
+                                } else { released };
+
+                                let mut inside_range_select = false;
+
+                                let mut previous_id = None;
                                 for item in sorted_items {
                                     let id = item.id(data);
-                                    let checked = selected.contains(&id);
-                                    let hover = old_hovered.contains(&id);
-                                    let remove = checked && hover && toggle_mode;
+                                    let mut checked = selected.contains(&id);
+                                    let mut hover = old_hovered.contains(&id);
+                                    let remove = checked && hover && mode == TOGGLE;
 
-                                    if search.is_empty() || item.show_on_search(&search, data) {
-                                        let mut child_frame = egui::Frame::default()
-                                            .inner_margin(inner_margin)
-                                            .outer_margin(outer_margin)
-                                            .rounding(rounding);
-                                        if remove {
-                                            item.style_removal(&mut child_frame)
-                                        } else if checked {
-                                            item.style_clicked(&mut child_frame);
-                                        } else if hover {
-                                            item.style_hovered(&mut child_frame);
-                                        } else {
-                                            item.style_normal(&mut child_frame);
+                                    let mut child_frame = egui::Frame::default()
+                                        .inner_margin(inner_margin)
+                                        .outer_margin(outer_margin)
+                                        .rounding(rounding);
+
+                                    if remove {
+                                        item.style_removal(&mut child_frame);
+                                    } else if checked {
+                                        item.style_clicked(&mut child_frame);
+                                    } else if hover {
+                                        item.style_hovered(&mut child_frame);
+                                    } else {
+                                        item.style_normal(&mut child_frame);
+                                    }
+
+                                    let mut interact_area = child_frame
+                                        .show(ui, |ui| {
+                                            item.show(checked, hover, ctx, ui, data);
+                                            ui.interact(
+                                                ui.max_rect(),
+                                                item.id(data),
+                                                Sense::click(),
+                                            )
+                                        })
+                                        .inner;
+
+                                    if interact_area.hovered() {
+                                        hovered.insert(id);
+                                    }
+
+                                    if range_select.is_closed() {
+                                        if key_down && old_range_select.end_id.and_then(|end_id| previous_id.and_then(|previous_id| Some(end_id == previous_id))).unwrap_or(false) {
+                                            range_select.end_id = Some(id);
                                         }
 
-                                        let mut interact_area = child_frame
-                                            .show(ui, |ui| {
-                                                item.show(checked, hover, ctx, ui, data);
-                                                ui.interact(
-                                                    ui.max_rect(),
-                                                    item.id(data),
-                                                    Sense::click(),
-                                                )
-                                            })
-                                            .inner;
-
-                                        if let Some(tips) = item.hovered_text() {
-                                            interact_area = interact_area.on_hover_text(tips);
+                                        if key_up && old_range_select.end_id.and_then(|end_id| Some(end_id == id)).unwrap_or(false) {
+                                            range_select.end_id = previous_id;
                                         }
+                                    }
 
-                                        if interact_area.hovered() {
-                                            hovered.insert(id);
-                                        }
+                                    if let Some(interact_pos) = interact_pos {
+                                        if interact_area.interact_rect.contains(interact_pos) {
+                                            if down {
+                                                if old_range_select.start_id.is_none() {
+                                                    range_select.start_id = Some(id);
+                                                }
 
-                                        if selected_area.map_or(false, |area| interact_area.rect.intersects(area)) {
-                                            hovered.insert(id);
-                                        } else if interact_area.clicked() && !checked {
-                                            if toggle_mode {
-                                                toggle_elements(&mut selected, [id]);
-                                            } else {
-                                                selected.clear();
-                                                selected.insert(id);
+                                                range_select.end_id = Some(id);
                                             }
                                         }
+                                    }
 
-                                        if checked {
-                                            item.selected_item(data);
-                                            selected_items.insert(item);
+                                    let mut in_selection = false;
+                                    if old_range_select.is_closed() {
+                                        if inside_range_select && old_range_select.is_single() {
+                                            inside_range_select = false;
                                         }
 
-                                        ui.end_row();
+                                        if inside_range_select {
+                                            in_selection = true;
+                                        }
+
+                                        if old_range_select.is_boundary(&id) {
+                                            in_selection = true;
+                                            inside_range_select = !inside_range_select;
+                                        }
                                     }
+
+                                    if interact_area.clicked() && mode != RANGE {
+                                        match mode {
+                                            NORMAL => {
+                                                checked = true;
+                                            }
+                                            TOGGLE => {
+                                                checked = !checked;
+                                            },
+                                            RANGE => {
+                                                //checked = true;
+                                            }
+                                        }
+                                    } else if in_selection {
+                                        match mode {
+                                            NORMAL => {
+                                                if close_range {
+                                                    checked = true;
+                                                } else {
+                                                    hovered.insert(id);
+                                                }
+                                            }
+                                            TOGGLE => {
+                                                if close_range {
+                                                    checked = !checked;
+                                                } else {
+                                                    hovered.insert(id);
+                                                }
+                                            },
+                                            RANGE => {
+                                                if close_range {
+                                                    checked = true;
+                                                } else {
+                                                    hovered.insert(id);
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if checked {
+                                        selected.insert(id);
+                                    } else {
+                                        selected.remove(&id);
+                                    }
+
+                                    if checked {
+                                        selected_items.insert(item);
+                                        item.selected_item(data);
+                                    }
+
+                                    ui.end_row();
+                                    previous_id = Some(id);
+                                }
+
+                                if close_range {
+                                    range_select.start_id = None;
+                                    range_select.end_id = None;
+                                    mode = NORMAL;
                                 }
                             });
                     });
 
+                // Save temporary state
                 ui.data_mut(|d| {
                     d.insert_temp(search_id, search);
                     d.insert_temp(selected_id, selected.clone());
                     d.insert_temp(hovered_id, hovered.clone());
-
+                    d.insert_temp(range_select_id, range_select.clone());
                     d.insert_temp(area_select_id, area_select);
+                    d.insert_temp(mode_id, mode);
                 });
 
-                old_selected != selected || hovered != old_hovered
+                old_selected != selected || hovered != old_hovered || old_range_select != range_select
             });
 
             resp.inner
@@ -238,13 +350,16 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
     }
 }
 
-fn toggle_elements<T: Eq + Hash>(set: &mut HashSet<T>, elements: impl IntoIterator<Item = T>){
-    for elem in elements {
-        if set.contains(&elem) {
-            set.remove(&elem);
-        } else {
-            set.insert(elem);
-        }
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+enum SelectMode {
+    NORMAL,
+    TOGGLE,
+    RANGE,
+}
+
+impl Default for SelectMode {
+    fn default() -> Self {
+        NORMAL
     }
 }
 
@@ -295,5 +410,29 @@ impl AreaSelect {
         if self.down {
             self.end = pointer_state.latest_pos();
         }
+    }
+}
+
+#[derive(Default, Copy, Clone, Eq, PartialEq)]
+struct RangeSelect {
+    pub start_id: Option<Id>,
+    pub end_id: Option<Id>,
+}
+
+impl RangeSelect {
+    pub fn is_single(&self) -> bool {
+        return self.is_closed() && self.start_id == self.end_id;
+    }
+
+    pub fn is_boundary(&self, id: &Id) -> bool {
+        return self.start_id == Some(*id) || self.end_id == Some(*id);
+    }
+
+    pub fn is_opened(&self) -> bool {
+        self.start_id.is_some() ^ self.end_id.is_some()
+    }
+
+    pub fn is_closed(&self) -> bool {
+        self.start_id.is_some() && self.end_id.is_some()
     }
 }
