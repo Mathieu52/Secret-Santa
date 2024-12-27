@@ -7,7 +7,7 @@ use itertools::{Itertools};
 use crate::listview::item_trait::ItemTrait;
 use crate::listview::listview::SelectMode::{NORMAL, RANGE};
 
-pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> {
+pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W>> {
     pub(crate) title: Cow<'a, str>,
     pub(crate) hold_text: Option<Cow<'a, str>>,
     pub(crate) items: L,
@@ -18,7 +18,7 @@ pub struct ListView<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<I
     pub(crate) striped: bool,
 }
 
-impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
+impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W>> ListView<'a, W, L> {
     pub fn new(items: L, data: W::Data<'a>) -> Self {
         Self {
             title: Cow::Borrowed("Search"),
@@ -33,7 +33,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
     }
 }
 
-impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> ListView<'a, W, L> {
+impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W>> ListView<'a, W, L> {
     pub fn title(mut self, title: Cow<'a, str>) -> Self {
         self.title = title;
         self
@@ -141,7 +141,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: Iterator<Item = &'a W>> L
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
-                                let sorted_items = items.filter(|&item| search.is_empty() || item.show_on_search(&search, data)).sorted_by(|a, b| {
+                                let sorted_items = items.into_iter().filter(|&item| search.is_empty() || item.show_on_search(&search, data)).sorted_by(|a, b| {
                                     Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data))
                                 });
 

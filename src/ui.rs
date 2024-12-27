@@ -2,10 +2,10 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use eframe::egui;
-use eframe::egui::{Align, Color32, Direction, Frame, Label, Layout, RichText, Rounding, Sense};
-use eframe::egui::CursorIcon::Text;
+use eframe::egui::{Align, Color32, Frame, Layout, Rounding};
+use eframe::egui::Key::{Backspace};
 use eframe::egui::panel::Side;
-use egui::{Context, SidePanel, CentralPanel, TextEdit, ComboBox, Widget, Ui, Response, ScrollArea, SelectableLabel};
+use egui::{Context, SidePanel, CentralPanel};
 use itertools::Itertools;
 use levenshtein::levenshtein;
 use crate::listview::item_trait::ItemTrait;
@@ -54,10 +54,12 @@ impl ItemTrait for Participant {
     }
 }
 
+
+// Modify the `SecretSanta` struct to wrap `participants` in `Rc<RefCell<...>>`.
 pub struct SecretSanta {
     searched_participant: String,
-    participants: Vec<Participant>,
-    exclusions: HashMap<Participant, Participant>
+    participants: Vec<Participant>, // Shared and mutable
+    exclusions: HashMap<Participant, Participant>,
 }
 
 impl Default for SecretSanta {
@@ -65,37 +67,44 @@ impl Default for SecretSanta {
         Self {
             searched_participant: String::default(),
             participants: generate_participants(50).iter().cloned().collect_vec(),
-            exclusions: HashMap::default()
+            exclusions: HashMap::default(),
         }
     }
 }
 
 impl eframe::App for SecretSanta {
     fn update(&mut self, ctx: &Context, _frame: &mut eframe::Frame) {
+        let Self { searched_participant, participants, exclusions } = self;
 
-        let Self {searched_participant, participants, exclusions} = self;
+        // Clone Rc<RefCell<...>> to pass shared ownership to ListView
+        //let participants_clone = participants.iter().cloned().map(|item| item);
+
+        let participants_copy: Vec<_> = participants.iter().map(|s| s.clone()).collect();
 
         SidePanel::new(Side::Left, "participants_panel").show(ctx, |ui| {
             ui.vertical(|ui| {
                 ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ListView::new(participants.iter(), ()).title("Search".into())
+                    // Borrow `participants` mutably to interact with ListView
+                    let selected = ListView::new(&participants_copy, ())
+                        .title("Search".into())
                         .hold_text("something".into())
                         .striped()
-                        .show(ctx, ui);
-                });
+                        .show(ctx, ui)
+                        .inner;
 
-                ui.horizontal(|ui| {
-                    ui.button("+");
-                    ui.button("-");
+                    // Remove selected items when Backspace is pressed
+                    ui.input(|i| {
+                        if i.key_pressed(Backspace) {
+                            // Borrow `participants` mutably and retain non-selected items
+                            participants.retain(|x| !selected.contains(x));
+                        }
+                    });
                 });
             });
         });
 
         CentralPanel::default().show(ctx, |ui| {
             ui.heading("My egui Application");
-            ui.horizontal(|ui| {
-                let name_label = ui.label("Your name: ");
-            });
         });
     }
 }
