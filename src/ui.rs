@@ -49,7 +49,7 @@ impl ItemTrait for Participant {
     }
 
     fn score_on_search(&self, text: &str, _data: Self::Data<'_>) -> usize {
-        levenshtein(text, &*self.name.clone())
+        levenshtein(text, &*self.name.clone()) - text.len().abs_diff(self.name.len())
     }
 }
 
