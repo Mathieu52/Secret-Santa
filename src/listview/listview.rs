@@ -136,7 +136,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
                         let interact_response = ui.interact(
-                            ui.max_rect(), // Interact with the entire panel area
+                            ui.clip_rect(), // Interact with the entire panel area
                             ui.auto_id_with("interaction_response"),
                             Sense::drag(),
                         );
