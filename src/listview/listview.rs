@@ -1,4 +1,4 @@
-use eframe::egui::{Align, Id, Key, Label, Layout, Margin, PointerButton, RichText, Rounding, ScrollArea, Sense, TextEdit};
+use eframe::egui::{Align, Button, Id, InnerResponse, Key, Label, Layout, Margin, PointerButton, Rect, Response, RichText, Rounding, scroll_area, ScrollArea, Sense, TextEdit};
 use std::borrow::Cow;
 use std::collections::{HashSet};
 use std::hash::Hash;
@@ -68,7 +68,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
         self,
         ctx: &egui::Context,
         ui: &mut egui::Ui,
-    ) -> egui::InnerResponse<HashSet<&'a W>> {
+    ) -> InnerResponse<(HashSet<&'a W>, Response, Rect)> {
         let mut selected_items: HashSet<&'a W> = HashSet::new();
 
         let mut resp = ui.vertical(|outer_ui| {
@@ -107,17 +107,15 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                 let mut toggle = ui.data_mut(|d| d.get_temp(toggle_id)).unwrap_or_default();
 
                 // Header with title and search bar
-                ui.horizontal_top(|ui| {
+                let header = ui.horizontal_top(|ui| {
                     ui.with_layout(Layout::left_to_right(Align::Min), |ui| {
                         ui.visuals_mut().button_frame = true;
                         ui.add(Label::new(RichText::new(title).strong()));
                     });
                     ui.with_layout(Layout::right_to_left(Align::Min), |ui| {
-                        if !search.is_empty() {
-                            ui.visuals_mut().button_frame = false;
-                            if ui.button("✖").on_hover_text("Clear search text").clicked() {
-                                search.clear();
-                            }
+                        ui.visuals_mut().button_frame = false;
+                        if ui.add_enabled(!search.is_empty(), Button::new("✖")).on_hover_text("Clear search text").clicked() {
+                            search.clear();
                         }
 
                         let mut search_text = TextEdit::singleline(&mut search);
@@ -126,12 +124,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                         }
                         ui.add(search_text);
                     });
-                });
+                }).response;
 
                 ui.separator();
 
                 // Scrollable list of items
-                ScrollArea::vertical()
+                let list_rect = ScrollArea::vertical()
                     .id_salt(root_id.with("list"))
                     .hscroll(true)
                     .drag_to_scroll(false)
@@ -143,7 +141,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                             Sense::drag(),
                         );
 
-                        egui::Grid::new("list_view_container")
+                        let grid = egui::Grid::new("list_view_container")
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
@@ -299,7 +297,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                                     mode = NORMAL;
                                 }
                             });
-                    });
+                    }).inner_rect;
 
                 // Save temporary state
                 ui.data_mut(|d| {
@@ -311,17 +309,19 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                     d.insert_temp(toggle_id, toggle);
                 });
 
-                old_selected != selected || hovered != old_hovered || old_range_select != range_select
+                (old_selected != selected || hovered != old_hovered || old_range_select != range_select, header, list_rect)
             });
 
             resp.inner
         });
 
-        if resp.inner {
+        let (refresh, header, list_rect) = resp.inner;
+
+        if refresh {
             resp.response.mark_changed();
         }
 
-        egui::InnerResponse::new(selected_items, resp.response)
+        egui::InnerResponse::new((selected_items, header, list_rect), resp.response)
     }
 }
 

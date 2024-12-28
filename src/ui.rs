@@ -82,17 +82,15 @@ impl eframe::App for SecretSanta {
 
         SidePanel::new(Side::Left, "participants_panel").show(ctx, |ui| {
             ui.vertical(|ui| {
-                let selected = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    ListView::new(&participants_copy, ())
-                        .title("Search".into())
-                        .hold_text("something".into())
-                        .striped()
-                        .show(ctx, ui).inner
-                }).inner;
+                let (selected, header, list_rect) = ListView::new(&participants_copy, ())
+                    .title("Search".into())
+                    .hold_text("something".into())
+                    .striped()
+                    .show(ctx, ui).inner;
 
                 let response = ui.interact(
-                    ui.max_rect(), // Interact with the entire panel area
-                    Id::new("grid_interaction"),
+                    list_rect, // Interact with the entire panel area
+                 Id::new("grid_interaction"),
                     Sense::click(),
                 );
 
