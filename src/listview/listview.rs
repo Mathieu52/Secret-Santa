@@ -1,4 +1,4 @@
-use eframe::egui::{Align, Button, Id, InnerResponse, Key, Label, Layout, Margin, PointerButton, Rect, Response, RichText, Rounding, scroll_area, ScrollArea, Sense, TextEdit};
+use eframe::egui::{Align, Button, Id, InnerResponse, Key, Label, Layout, Margin, PointerButton, Rect, Response, RichText, Rounding, ScrollArea, Sense, TextEdit};
 use std::borrow::Cow;
 use std::collections::{HashSet};
 use std::hash::Hash;
@@ -141,7 +141,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                             Sense::drag(),
                         );
 
-                        let grid = egui::Grid::new("list_view_container")
+                        egui::Grid::new("list_view_container")
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
@@ -326,7 +326,7 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
             resp.response.mark_changed();
         }
 
-        egui::InnerResponse::new((selected_items, header, list_rect), resp.response)
+        InnerResponse::new((selected_items, header, list_rect), resp.response)
     }
 }
 
