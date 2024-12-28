@@ -12,3 +12,4 @@ eframe = "0.29.1"
 env_logger = "0.11.5"
 
 levenshtein = "1.0.5"
+random_name_generator = "0.3.6"

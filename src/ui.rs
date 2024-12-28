@@ -1,13 +1,12 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 use eframe::egui;
-use eframe::egui::{Align, Color32, Frame, Layout, Rounding};
+use eframe::egui::{Align, Color32, Frame, Id, Layout, Rounding, Sense};
 use eframe::egui::Key::{Backspace};
 use eframe::egui::panel::Side;
 use egui::{Context, SidePanel, CentralPanel};
 use itertools::Itertools;
 use levenshtein::levenshtein;
+use rnglib::{Language, RNG};
 use crate::listview::item_trait::ItemTrait;
 use crate::listview::listview::ListView;
 use crate::participant::Participant;
@@ -83,22 +82,46 @@ impl eframe::App for SecretSanta {
 
         SidePanel::new(Side::Left, "participants_panel").show(ctx, |ui| {
             ui.vertical(|ui| {
-                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                    // Borrow `participants` mutably to interact with ListView
-                    let selected = ListView::new(&participants_copy, ())
+                let selected = ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    ListView::new(&participants_copy, ())
                         .title("Search".into())
                         .hold_text("something".into())
                         .striped()
-                        .show(ctx, ui)
-                        .inner;
+                        .show(ctx, ui).inner
+                }).inner;
 
-                    // Remove selected items when Backspace is pressed
-                    ui.input(|i| {
-                        if i.key_pressed(Backspace) {
-                            // Borrow `participants` mutably and retain non-selected items
-                            participants.retain(|x| !selected.contains(x));
-                        }
-                    });
+                let response = ui.interact(
+                    ui.max_rect(), // Interact with the entire panel area
+                    Id::new("grid_interaction"),
+                    Sense::click(),
+                );
+
+                // Attach the context menu to the overall grid response
+                response.context_menu(|ui| {
+                    if ui.button("Remove Participants").clicked() {
+                        participants.retain(|x| !selected.contains(x));
+                        ui.close_menu();
+                    }
+
+                    if ui.button("Add Participant").clicked() {
+                        let rng = RNG::try_from(&Language::Elven).unwrap();
+
+                        let first_name = rng.generate_name();
+                        let last_name = rng.generate_name();
+
+                        participants.push(Participant {name: format!("{first_name} {last_name}")});
+                        println!("Another action triggered!");
+                        ui.close_menu();
+                    }
+                });
+
+                // Remove selected items when Backspace is pressed
+                ui.input(|i| {
+
+                    if i.key_pressed(Backspace) {
+                        // Borrow `participants` mutably and retain non-selected items
+                        participants.retain(|x| !selected.contains(x));
+                    }
                 });
             });
         });
