@@ -145,9 +145,14 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                             .num_columns(1)
                             .striped(striped)
                             .show(ui, |ui| {
-                                let sorted_items = items.into_iter().filter(|&item| search.is_empty() || item.show_on_search(&search, data)).sorted_by(|a, b| {
-                                    Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data))
-                                });
+                                let items = items.into_iter().filter(|item| search.is_empty() || item.show_on_search(&search, data));
+                                let sorted_items: Vec<_> = if !search.is_empty() {
+                                    items
+                                        .sorted_by(|a, b| Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data)))
+                                        .collect()
+                                } else {
+                                    items.collect()
+                                };
 
                                 let pressed = interact_response.drag_started_by(PointerButton::Primary);
                                 let down = interact_response.dragged_by(PointerButton::Primary);
