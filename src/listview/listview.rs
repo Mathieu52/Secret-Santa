@@ -137,6 +137,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                     .drag_to_scroll(false)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        let interact_response = ui.interact(
+                            ui.max_rect(), // Interact with the entire panel area
+                            ui.auto_id_with("interaction_response"),
+                            Sense::drag(),
+                        );
+
                         egui::Grid::new("list_view_container")
                             .num_columns(1)
                             .striped(striped)
@@ -145,12 +151,12 @@ impl<'a, W: ItemTrait + Eq + PartialEq + Hash + 'a, L: IntoIterator<Item = &'a W
                                     Ord::cmp(&a.score_on_search(&search, data), &b.score_on_search(&search, data))
                                 });
 
-                                let (pressed, down, released, key_up, key_down) = ui.input(|i| {
-                                    let pressed = i.pointer.button_pressed(PointerButton::Primary);
-                                    let down = i.pointer.button_down(PointerButton::Primary);
-                                    let released = i.pointer.button_released(PointerButton::Primary);
+                                let pressed = interact_response.drag_started_by(PointerButton::Primary);
+                                let down = interact_response.dragged_by(PointerButton::Primary);
+                                let released = interact_response.drag_stopped_by(PointerButton::Primary);
 
-                                    (pressed, down, released, i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown))
+                                let (key_up, key_down) = ui.input(|i| {
+                                    (i.key_pressed(Key::ArrowUp), i.key_pressed(Key::ArrowDown))
                                 });
 
                                 let active_toggle = ui.input(|i| i.modifiers.command);
